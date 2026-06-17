@@ -4,10 +4,38 @@ from .safestring import SafeString
 _UNDEFINED = object()
 
 
+BLOCKED_ATTRS = frozenset({
+    '__class__', '__mro__', '__bases__', '__subclasses__',
+    '__globals__', '__code__', '__func__', '__self__',
+    '__module__', '__dict__', '__weakref__',
+    '__init__', '__new__', '__del__',
+    '__import__', '__builtins__',
+    '__getattribute__', '__getattr__', '__setattr__', '__delattr__',
+    '__call__', '__iter__', '__next__',
+    'eval', 'exec', 'compile',
+    'open', 'input', 'exit', 'quit',
+    'getattr', 'setattr', 'delattr',
+})
+
+BLOCKED_ATTR_PREFIXES = ('_',)
+
+
+def _is_safe_attr(key):
+    if not isinstance(key, str):
+        return True
+    if key in BLOCKED_ATTRS:
+        return False
+    for prefix in BLOCKED_ATTR_PREFIXES:
+        if key.startswith(prefix):
+            return False
+    return True
+
+
 class Context:
-    def __init__(self, data=None):
+    def __init__(self, data=None, sandbox=None):
         self._stack = [data or {}]
         self._block_overrides = {}
+        self._sandbox = sandbox
 
     def push(self, data=None):
         self._stack.append(data or {})
@@ -44,6 +72,8 @@ class Context:
         return value
 
     def _lookup(self, name):
+        if not _is_safe_attr(name):
+            return _UNDEFINED
         for scope in reversed(self._stack):
             if name in scope:
                 return scope[name]
@@ -54,6 +84,8 @@ class Context:
             return _UNDEFINED
 
         if isinstance(obj, dict):
+            if not _is_safe_attr(key):
+                return _UNDEFINED
             if key in obj:
                 return obj[key]
             return _UNDEFINED
@@ -61,17 +93,28 @@ class Context:
         if isinstance(key, (int, float)):
             try:
                 int_key = int(key)
-                if hasattr(obj, '__getitem__') and len(obj) > int_key:
-                    return obj[int_key]
-            except (TypeError, ValueError, IndexError):
+                if hasattr(obj, '__getitem__'):
+                    try:
+                        if len(obj) > int_key:
+                            return obj[int_key]
+                    except TypeError:
+                        pass
+            except (ValueError, IndexError):
                 pass
+            return _UNDEFINED
 
         if isinstance(key, str):
-            if hasattr(obj, key):
-                try:
-                    return getattr(obj, key)
-                except AttributeError:
-                    pass
+            if not _is_safe_attr(key):
+                return _UNDEFINED
+            try:
+                return getattr(obj, key)
+            except AttributeError:
+                pass
+            try:
+                if hasattr(obj, '__getitem__'):
+                    return obj[key]
+            except (KeyError, IndexError, TypeError):
+                pass
 
         return _UNDEFINED
 
@@ -96,6 +139,8 @@ class Context:
             return None if value is _UNDEFINED else value
 
         if isinstance(expr, GetAttrExpr):
+            if not _is_safe_attr(expr.attr):
+                return None
             obj = self._evaluate_expression(expr.obj)
             result = self._traverse(obj, expr.attr)
             return None if result is _UNDEFINED else result
@@ -103,6 +148,8 @@ class Context:
         if isinstance(expr, GetItemExpr):
             obj = self._evaluate_expression(expr.obj)
             index = self._evaluate_expression(expr.index)
+            if not _is_safe_attr(index):
+                return None
             result = self._traverse(obj, index)
             return None if result is _UNDEFINED else result
 

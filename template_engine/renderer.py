@@ -72,7 +72,7 @@ class Renderer:
     def _render_variable(self, node, context):
         value = context.resolve(node.path)
         if node.filters:
-            value = self.filter_registry.apply_chain(value, node.filters)
+            value = self.filter_registry.apply_chain(value, node.filters, context)
         return self.output_format.format_value(value)
 
     def _render_if(self, node, context):
@@ -80,7 +80,7 @@ class Renderer:
             value = context.resolve(cond_path)
             if cond_filters:
                 value = self.filter_registry.apply_chain(
-                    value, cond_filters
+                    value, cond_filters, context
                 )
             if context.is_truthy(value):
                 return self._render_nodes(body, context)
@@ -92,6 +92,14 @@ class Renderer:
 
     def _render_for(self, node, context):
         iterable = context.resolve(node.iterable_path)
+        if iterable is None:
+            return ''
+
+        if node.iterable_filters:
+            iterable = self.filter_registry.apply_chain(
+                iterable, node.iterable_filters, context
+            )
+
         if iterable is None:
             return ''
 

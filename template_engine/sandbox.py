@@ -20,6 +20,11 @@ class Sandbox:
         '__module__', '__dict__', '__weakref__',
         '__init__', '__new__', '__del__',
         '__import__', '__builtins__',
+        '__getattribute__', '__getattr__', '__setattr__', '__delattr__',
+        '__call__', '__iter__', '__next__',
+        'eval', 'exec', 'compile',
+        'open', 'input', 'exit', 'quit',
+        'getattr', 'setattr', 'delattr',
     })
 
     def __init__(self, enabled=True):
@@ -53,7 +58,7 @@ class Sandbox:
                 f"Access to attribute {attr!r} is not allowed"
             )
         for prefix in self.BLOCKED_ATTR_PREFIXES:
-            if attr.startswith(prefix) and attr not in ('_length',):
+            if attr.startswith(prefix):
                 raise SecurityError(
                     f"Access to attribute {attr!r} starting with "
                     f"{prefix!r} is not allowed"
@@ -86,12 +91,25 @@ class Sandbox:
                 raise SecurityError(
                     f"Access to name {expr_node.name!r} is not allowed"
                 )
+            if expr_node.name.startswith('_'):
+                raise SecurityError(
+                    f"Access to private name {expr_node.name!r} is not allowed"
+                )
+            if expr_node.name in self.BLOCKED_ATTRS:
+                raise SecurityError(
+                    f"Access to name {expr_node.name!r} is not allowed"
+                )
         elif isinstance(expr_node, GetAttrExpr):
             self.check_attribute_access(None, expr_node.attr)
             self.check_expression(expr_node.obj)
         elif isinstance(expr_node, GetItemExpr):
             self.check_expression(expr_node.obj)
             self.check_expression(expr_node.index)
+            from .nodes import LiteralExpr
+            if isinstance(expr_node.index, LiteralExpr):
+                idx = expr_node.index.value
+                if isinstance(idx, str):
+                    self.check_attribute_access(None, idx)
         elif isinstance(expr_node, FilterExpr):
             self.check_filter(expr_node.name)
             self.check_expression(expr_node.node)

@@ -98,13 +98,22 @@ class Compiler:
         while isinstance(current, FilterExpr):
             compiled_args = []
             for arg in current.args:
-                if isinstance(arg, LiteralExpr):
-                    compiled_args.append(arg.value)
-                else:
-                    compiled_args.append(('__expr__', arg))
+                compiled_args.append(self._compile_filter_arg(arg))
             filters.insert(0, (current.name, compiled_args))
             current = current.node
         return filters
+
+    def _compile_filter_arg(self, arg):
+        path = self._extract_path(arg)
+        if path is not None and path[0] not in ('__expr__', '__literal__'):
+            return ('__ref__', path)
+        if path is not None and path[0] == '__literal__':
+            return path[1]
+        if path is not None and path[0] == '__expr__':
+            return ('__expr__', arg)
+        if isinstance(arg, LiteralExpr):
+            return arg.value
+        return ('__expr__', arg)
 
     def _compile_if(self, node):
         branches = []
@@ -125,6 +134,7 @@ class Compiler:
         return IRFor(
             var_name=node.var_name,
             iterable_path=iterable_path,
+            iterable_filters=iterable_filters,
             body=compiled_body,
         )
 

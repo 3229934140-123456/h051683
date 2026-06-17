@@ -26,11 +26,12 @@ class IRIf(IRNode):
 
 
 class IRFor(IRNode):
-    __slots__ = ('var_name', 'iterable_path', 'body')
+    __slots__ = ('var_name', 'iterable_path', 'iterable_filters', 'body')
 
-    def __init__(self, var_name, iterable_path, body=None):
+    def __init__(self, var_name, iterable_path, iterable_filters=None, body=None):
         self.var_name = var_name
         self.iterable_path = iterable_path
+        self.iterable_filters = iterable_filters or []
         self.body = body or []
 
 

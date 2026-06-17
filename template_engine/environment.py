@@ -4,7 +4,7 @@ from .parser import Parser
 from .compiler import Compiler
 from .filters import FilterRegistry
 from .sandbox import Sandbox
-from .errors import TemplateNotFoundError
+from .errors import TemplateNotFoundError, SecurityError
 
 
 class DictLoader:
@@ -12,21 +12,48 @@ class DictLoader:
         self.templates = templates
 
     def load(self, name):
+        self._validate_path(name)
         if name in self.templates:
             return self.templates[name]
         raise TemplateNotFoundError(name)
+
+    def _validate_path(self, name):
+        pass
 
 
 class FileSystemLoader:
     def __init__(self, search_paths, encoding='utf-8'):
         if isinstance(search_paths, str):
             search_paths = [search_paths]
-        self.search_paths = search_paths
+        self.search_paths = [os.path.abspath(p) for p in search_paths]
         self.encoding = encoding
 
+    def _validate_path(self, name):
+        if os.path.isabs(name):
+            raise SecurityError(
+                f"Absolute paths are not allowed in template "
+                f"references: {name!r}"
+            )
+        if '..' in name.split(os.sep):
+            raise SecurityError(
+                f"Parent directory references are not allowed in "
+                f"template references: {name!r}"
+            )
+        if '..' in name.split('/'):
+            raise SecurityError(
+                f"Parent directory references are not allowed in "
+                f"template references: {name!r}"
+            )
+
     def load(self, name):
+        self._validate_path(name)
         for path in self.search_paths:
-            full_path = os.path.join(path, name)
+            full_path = os.path.normpath(os.path.join(path, name))
+            if not os.path.abspath(full_path).startswith(os.path.abspath(path)):
+                raise SecurityError(
+                    f"Template path escapes the configured template "
+                    f"directory: {name!r}"
+                )
             if os.path.isfile(full_path):
                 with open(full_path, 'r', encoding=self.encoding) as f:
                     return f.read()

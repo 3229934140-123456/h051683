@@ -17,7 +17,7 @@ class FilterRegistry:
     def has(self, name):
         return name in self._filters
 
-    def apply_chain(self, value, filter_chain):
+    def apply_chain(self, value, filter_chain, context=None):
         for filter_name, args in filter_chain:
             func = self._filters.get(filter_name)
             if func is None:
@@ -25,14 +25,25 @@ class FilterRegistry:
             if args:
                 resolved_args = []
                 for arg in args:
-                    if isinstance(arg, tuple) and len(arg) == 2 and arg[0] == '__expr__':
-                        resolved_args.append(arg[1])
-                    else:
-                        resolved_args.append(arg)
-                value = func(value, *resolved_args)
+                    resolved_args.append(self._resolve_arg(arg, context))
+                try:
+                    value = func(value, *resolved_args)
+                except (TypeError, ValueError, IndexError, KeyError, AttributeError):
+                    return value
             else:
                 value = func(value)
         return value
+
+    def _resolve_arg(self, arg, context):
+        if isinstance(arg, tuple) and len(arg) == 2 and arg[0] == '__expr__':
+            if context is not None:
+                return context.resolve(('__expr__', arg[1]))
+            return None
+        if isinstance(arg, tuple) and len(arg) >= 1 and arg[0] == '__ref__':
+            if context is not None and len(arg) > 1:
+                return context.resolve(arg[1])
+            return None
+        return arg
 
     def _register_builtins(self):
         self.register('upper', _filter_upper)
